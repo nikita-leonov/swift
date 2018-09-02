@@ -2844,6 +2844,10 @@ ERROR(self_assignment_prop,none,
 ERROR(property_use_in_closure_without_explicit_self,none,
       "reference to property %0 in closure requires explicit 'self.' to make"
       " capture semantics explicit", (Identifier))
+WARNING(warn_function_reference_as_function_argument_without_explicit_self,none,
+      "passing function %0 as a reference implicitly captures `self`", (Identifier))
+NOTE(fix_function_reference_as_function_argument_without_explicit_self,none,
+"use 'self.' to silence this warning", ())
 ERROR(method_call_in_closure_without_explicit_self,none,
       "call to method %0 in closure requires explicit 'self.' to make"
       " capture semantics explicit", (Identifier))

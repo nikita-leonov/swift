@@ -1584,6 +1584,57 @@ static void diagRecursivePropertyAccess(TypeChecker &TC, const Expr *E,
   const_cast<Expr *>(E)->walk(walker);
 }
 
+/// Look for function references passed as an argument that captured self
+/// implicitly.
+static void diagnoseImplicitlyCapturedSelf(TypeChecker &TC, const Expr *E,
+											 const DeclContext *DC) {
+	class DiagnoseWalker : public ASTWalker {
+		TypeChecker &TC;
+	public:
+		explicit DiagnoseWalker(TypeChecker &TC)
+		: TC(TC) {}
+		
+		/// Return true if this is an implicit reference to self.
+		static bool isImplicitSelfUse(Expr *E) {
+			auto *DRE = dyn_cast<DeclRefExpr>(E);
+			return DRE && DRE->isImplicit() && isa<VarDecl>(DRE->getDecl()) &&
+			cast<VarDecl>(DRE->getDecl())->isSelfParameter() &&
+			// Metatype self captures don't extend the lifetime of an object.
+			!DRE->getType()->is<MetatypeType>();
+		}
+		
+		// Don't walk into nested decls.
+		bool walkToDeclPre(Decl *D) override {
+			return false;
+		}
+		
+		std::pair<bool, Expr *> walkToExprPre(Expr *E) override {
+			if (auto capturingExpr = dyn_cast<FunctionConversionExpr>(E))
+				if (auto *capturedExpr = capturingExpr->getSubExpr())
+					if (auto *DSCE = dyn_cast<DotSyntaxCallExpr>(capturedExpr))
+						if (isImplicitSelfUse(DSCE->getBase()) &&
+							isa<DeclRefExpr>(DSCE->getFn())) {
+							auto MethodExpr = cast<DeclRefExpr>(DSCE->getFn());
+							TC.diagnose(DSCE->getLoc(),
+										diag::warn_function_reference_as_function_argument_without_explicit_self,
+										MethodExpr->getDecl()->getBaseName().getIdentifier());
+							TC.diagnose(DSCE->getLoc(),
+										diag::fix_function_reference_as_function_argument_without_explicit_self)
+							.fixItInsert(DSCE->getLoc(), "self.");
+							return { false, E };
+						}
+
+			return { true, E };
+		}
+		
+		Expr *walkToExprPost(Expr *E) override {
+			return E;
+		}
+	};
+	
+	const_cast<Expr *>(E)->walk(DiagnoseWalker(TC));
+}
+
 /// Look for any property references in closures that lack a "self." qualifier.
 /// Within a closure, we require that the source code contain "self." explicitly
 /// because 'self' is captured, not the property value.  This is a common source
@@ -3925,6 +3976,7 @@ void swift::performSyntacticExprDiagnostics(TypeChecker &TC, const Expr *E,
   TC.diagnoseSelfAssignment(E);
   diagSyntacticUseRestrictions(TC, E, DC, isExprStmt);
   diagRecursivePropertyAccess(TC, E, DC);
+  diagnoseImplicitlyCapturedSelf(TC, E, DC);
   diagnoseImplicitSelfUseInClosure(TC, E, DC);
   diagnoseUnintendedOptionalBehavior(TC, E, DC);
   if (!TC.Context.isSwiftVersionAtLeast(5))

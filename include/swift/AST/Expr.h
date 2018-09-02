@@ -4057,7 +4057,7 @@ public:
 /// is modeled as a DeclRefExpr or OverloadSetRefExpr on the method.
 class DotSyntaxCallExpr : public SelfApplyExpr {
   SourceLoc DotLoc;
-  
+	
 public:
   DotSyntaxCallExpr(Expr *FnExpr, SourceLoc DotLoc, Expr *BaseExpr,
                     Type Ty = Type())
